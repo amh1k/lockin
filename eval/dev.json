@@ -1,0 +1,74 @@
+[
+  {
+    "id": "dev-youtube-stripe-tutorial",
+    "goal": "Implement Stripe subscriptions in my web app",
+    "snapshot": {
+      "pageKey": "https://www.youtube.com/watch?v=dev-stripe-01",
+      "modelUrl": "https://www.youtube.com/watch",
+      "title": "Stripe subscriptions in Node.js: checkout, webhooks, and billing portal",
+      "description": "A coding walkthrough for adding recurring subscriptions to a web application.",
+      "text": "The tutorial creates a Stripe customer, subscription checkout session, and webhook handler, then tests renewal events in a Node.js app."
+    },
+    "expected": "relevant"
+  },
+  {
+    "id": "dev-youtube-gameplay-same-site",
+    "goal": "Implement Stripe subscriptions in my web app",
+    "snapshot": {
+      "pageKey": "https://www.youtube.com/watch?v=dev-game-01",
+      "modelUrl": "https://www.youtube.com/watch",
+      "title": "I built the most chaotic survival base in Valheim",
+      "description": "A gameplay highlights video with friends.",
+      "text": "The creator discusses cutting long sessions into short clips, adding subtitles, balancing game and voice audio, and pacing highlights."
+    },
+    "expected": "distracting"
+  },
+  {
+    "id": "dev-reddit-django-billing",
+    "goal": "Add recurring billing to a Django project",
+    "snapshot": {
+      "pageKey": "https://www.reddit.com/r/django/comments/dev001/",
+      "modelUrl": "https://www.reddit.com/r/django/comments/dev001/",
+      "title": "How we handle Stripe subscription webhooks in Django",
+      "description": "Discussion of idempotency, retries, and local webhook testing.",
+      "text": "We store processed event IDs, validate webhook signatures, and update subscription status in an atomic transaction."
+    },
+    "expected": "relevant"
+  },
+  {
+    "id": "dev-reddit-gaming-same-site",
+    "goal": "Add recurring billing to a Django project",
+    "snapshot": {
+      "pageKey": "https://www.reddit.com/r/gaming/comments/dev002/",
+      "modelUrl": "https://www.reddit.com/r/gaming/comments/dev002/",
+      "title": "What are you playing this weekend?",
+      "description": "A weekly community thread about games.",
+      "text": "Players compare co-op games, recommend new releases, and share what they plan to play."
+    },
+    "expected": "distracting"
+  },
+  {
+    "id": "dev-youtube-changed-goal-pair",
+    "goal": "Research gaming video editing techniques",
+    "snapshot": {
+      "pageKey": "https://www.youtube.com/watch?v=dev-game-01",
+      "modelUrl": "https://www.youtube.com/watch",
+      "title": "I built the most chaotic survival base in Valheim",
+      "description": "A gameplay highlights video with friends.",
+      "text": "The creator discusses cutting long sessions into short clips, adding subtitles, balancing game and voice audio, and pacing highlights."
+    },
+    "expected": "relevant"
+  },
+  {
+    "id": "dev-reddit-sparse-context",
+    "goal": "Learn how to deploy a small web app",
+    "snapshot": {
+      "pageKey": "https://www.reddit.com/r/webdev/comments/dev003/",
+      "modelUrl": "https://www.reddit.com/r/webdev/comments/dev003/",
+      "title": "Need help",
+      "description": "",
+      "text": "Anyone know?"
+    },
+    "expected": "uncertain"
+  }
+]
