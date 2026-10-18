@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LockIn</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="brand-row">
+        <div class="brand-mark" aria-hidden="true">L</div>
+        <div><p class="eyebrow">FOCUS, WITH CONTEXT</p><h1>LockIn</h1></div>
+        <span class="local-pill"><span></span> LOCAL AI</span>
+      </header>
+
+      <p id="site-status" class="site-status" role="status"></p>
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+      <section id="session-view" class="session-view" hidden>
+        <p class="eyebrow">SESSION IN PROGRESS</p>
+        <h2 id="session-goal"></h2>
+        <div class="countdown-row"><span>Time remaining</span><strong id="countdown">--:--</strong></div>
+        <p id="session-sites" class="muted"></p>
+        <button id="end-session" class="button button-secondary" type="button">End focus session</button>
+      </section>
+
+      <form id="start-form" novalidate>
+        <label class="field-label" for="goal">What are you working on?</label>
+        <textarea id="goal" name="goal" minlength="10" maxlength="300" rows="3" placeholder="e.g. Implement Stripe subscriptions in my web app" required></textarea>
+        <div class="field-hint"><span>Be specific so Gemma can judge useful pages.</span><span id="goal-count">0 / 300</span></div>
+
+        <fieldset>
+          <legend>Protect these sites</legend>
+          <label class="check-row"><input type="checkbox" name="host" value="www.youtube.com" checked /><span>YouTube</span></label>
+          <label class="check-row"><input type="checkbox" name="host" value="www.reddit.com" checked /><span>Reddit</span></label>
+        </fieldset>
+
+        <fieldset class="duration-options">
+          <legend>Focus duration</legend>
+          <label class="duration-choice"><input type="radio" name="duration" value="25" checked /><span><strong>25</strong><small>minutes</small></span></label>
+          <label class="duration-choice"><input type="radio" name="duration" value="50" /><span><strong>50</strong><small>minutes</small></span></label>
+        </fieldset>
+
+        <button id="start-session" class="button button-primary" type="submit">Start focus session <span aria-hidden="true">→</span></button>
+      </form>
+
+      <footer><span>Gemma runs on your device through Ollama.</span><button id="check-model" class="text-button" type="button">Check setup</button></footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

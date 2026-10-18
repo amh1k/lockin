@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "LockIn — Focus with context",
+  "version": "0.1.0",
+  "description": "Use local Gemma to distinguish useful research from distractions.",
+  "minimum_chrome_version": "106",
+  "permissions": ["storage", "alarms", "scripting", "webNavigation"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://www.reddit.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "LockIn focus session",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*", "https://www.reddit.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
