@@ -24,18 +24,22 @@ const instances = new WeakMap<Document, Barrier>();
 const styles = `
   :host { all: initial; color: #f8fafc; font: 14px/1.5 system-ui, sans-serif; }
   *, *::before, *::after { box-sizing: border-box; }
-  .status { position: fixed; z-index: 2147483647; top: 16px; right: 16px; max-width: min(360px, calc(100vw - 32px)); padding: 12px 16px; border: 1px solid #475569; border-radius: 12px; background: #0f172a; color: #f8fafc; box-shadow: 0 8px 32px #0008; }
-  .backdrop { position: fixed; z-index: 2147483647; inset: 0; display: grid; place-items: center; padding: 24px; background: #020617e8; }
-  .dialog { width: min(480px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 28px; border: 1px solid #475569; border-radius: 20px; background: #0f172a; color: #f8fafc; box-shadow: 0 24px 80px #000b; }
+  .status { position: fixed; z-index: 2147483647; top: 16px; right: 16px; max-width: min(360px, calc(100vw - 32px)); padding: 12px 16px; border: 1px solid #354539; border-radius: 12px; background: #101713; color: #f8fafc; box-shadow: 0 8px 32px #0008; }
+  .backdrop { position: fixed; z-index: 2147483647; inset: 0; display: grid; place-items: center; padding: 24px; background: #080f0de8; }
+  .dialog { width: min(480px, 100%); max-height: calc(100vh - 48px); overflow: auto; padding: 28px; border: 1px solid #354539; border-radius: 20px; background: #101713; color: #f8fafc; box-shadow: 0 24px 80px #000b; }
+  .brand { margin-bottom: 24px; color: #bef264; font-size: 12px; font-weight: 800; letter-spacing: .15em; }
+  .caption { color: #99ad9e; font-size: 12px; }
+  .status { display: flex; align-items: center; gap: 12px; }
+  .dismiss { min-height: 28px; min-width: 28px; padding: 0; background: transparent; color: #a7b6ac; font-size: 20px; }
   h1 { margin: 0 0 12px; font-size: 24px; line-height: 1.2; }
   p { margin: 8px 0 18px; color: #cbd5e1; overflow-wrap: anywhere; }
   .goal { color: #f8fafc; font-weight: 600; }
-  .reason { padding: 12px; border-radius: 10px; background: #1e293b; }
+  .reason { padding: 12px; border-radius: 10px; background: #19241c; }
   .error { min-height: 1.5em; color: #fca5a5; }
   .actions { display: grid; gap: 10px; }
-  button { min-height: 44px; padding: 10px 14px; border: 0; border-radius: 10px; background: #a3e635; color: #17200a; font: inherit; font-weight: 700; cursor: pointer; }
+  button { min-height: 44px; padding: 10px 14px; border: 0; border-radius: 10px; background: #bef264; color: #17200a; font: inherit; font-weight: 700; cursor: pointer; }
   button.secondary { border: 1px solid #64748b; background: transparent; color: #f8fafc; }
-  button:focus-visible { outline: 3px solid #38bdf8; outline-offset: 3px; }
+  button:focus-visible { outline: 3px solid #bef264; outline-offset: 3px; }
   button:disabled { cursor: wait; opacity: .65; }
   @media (prefers-reduced-motion: no-preference) { .dialog { animation: enter .16s ease-out; } @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } }
 `;
@@ -71,6 +75,8 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
   let endButton: HTMLButtonElement | undefined;
   let mediaHandler: ((event: Event) => void) | undefined;
   let destroyed = false;
+  let revision = 0;
+  let lastViewKey = '';
 
   (body ?? html).append(host);
 
@@ -91,6 +97,8 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
   };
 
   const release = (next: 'idle' | 'unavailable' = 'idle'): void => {
+    revision += 1;
+    lastViewKey = '';
     clearTimers();
     if (phase === 'blocked') restorePage();
     phase = next;
@@ -103,7 +111,17 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
     const status = element(document, 'div', 'surface status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    status.textContent = message;
+    const text = element(document, 'span');
+    text.textContent = message;
+    status.append(text);
+    if (phase !== 'checking') {
+      const close = element(document, 'button', 'dismiss');
+      close.type = 'button';
+      close.textContent = '×';
+      close.setAttribute('aria-label', 'Dismiss LockIn status');
+      close.addEventListener('click', () => status.remove());
+      status.append(close);
+    }
     root.append(status);
   };
 
@@ -114,7 +132,7 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
 
   function onFocusIn(event: FocusEvent): void {
     if (phase !== 'blocked' || root.contains(event.composedPath()[0] as Node)) return;
-    focusables()[0]?.focus({ preventScroll: true });
+    (focusables()[0] ?? root.querySelector<HTMLElement>('.dialog'))?.focus({ preventScroll: true });
   }
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -126,7 +144,7 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
     }
     if (event.key !== 'Tab') return;
     const buttons = focusables();
-    if (!buttons.length) return;
+    if (!buttons.length) { event.preventDefault(); root.querySelector<HTMLElement>('.dialog')?.focus(); return; }
     const first = buttons[0];
     const last = buttons[buttons.length - 1];
     if (event.shiftKey && root.activeElement === first) {
@@ -139,7 +157,8 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
   };
   const keydownHandler: EventListener = (event) => onKeyDown(event as KeyboardEvent);
 
-  const boundedAction = async (action: () => Promise<void>): Promise<void> => {
+  const boundedAction = async (action: () => Promise<void>, ending = false): Promise<void> => {
+    const actionRevision = revision;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
@@ -148,8 +167,10 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
           timer = setTimeout(() => reject(new Error('timeout')), ACTION_TIMEOUT_MS);
         }),
       ]);
-      if (!destroyed) release('idle');
+      if (!destroyed && revision === actionRevision) release('idle');
     } catch {
+      if (destroyed || revision !== actionRevision) return;
+      if (ending) { release('unavailable'); return; }
       if (errorNode && !destroyed) errorNode.textContent = 'Could not update the focus session. Try again or end the session.';
       if (overrideButton) overrideButton.disabled = false;
       if (endButton) endButton.disabled = false;
@@ -160,14 +181,19 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
 
   const renderBlocked = (view: BarrierView): void => {
     const wasBlocked = phase === 'blocked';
+    const focusedEnd = root.activeElement === endButton;
+    const focusedOverride = root.activeElement === overrideButton;
     root.querySelector('.surface')?.remove();
     const backdrop = element(document, 'div', 'surface backdrop');
     const dialog = element(document, 'section', 'dialog');
+    dialog.tabIndex = -1;
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-labelledby', 'lockin-title');
     dialog.setAttribute('aria-describedby', 'lockin-reason');
 
+    const brand = element(document, 'div', 'brand');
+    brand.textContent = 'LOCKIN / STAY WITH YOUR GOAL';
     const heading = element(document, 'h1');
     heading.id = 'lockin-title';
     heading.textContent = 'This page can wait';
@@ -194,10 +220,12 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
     endButton.textContent = 'End focus session';
     endButton.addEventListener('click', () => {
       endButton!.disabled = true;
-      void boundedAction(actions.end);
+      void boundedAction(actions.end, true);
     });
     buttons.append(overrideButton, endButton);
-    dialog.append(heading, goal, reason, error, buttons);
+    const caption = element(document, 'p', 'caption');
+    caption.textContent = 'Gemma thinks this page may be a distraction. You’re in control.';
+    dialog.append(brand, heading, caption, goal, reason, error, buttons);
     backdrop.append(dialog);
     root.append(backdrop);
 
@@ -221,12 +249,17 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
       document.addEventListener('play', mediaHandler, true);
     }
     phase = 'blocked';
-    if (!wasBlocked) overrideButton.focus({ preventScroll: true });
+    if (!wasBlocked || focusedOverride) overrideButton.focus({ preventScroll: true });
+    else if (focusedEnd) endButton.focus({ preventScroll: true });
   };
 
   const barrier: Barrier = {
     render(view): void {
       if (destroyed) return;
+      const viewKey = JSON.stringify(view);
+      if (viewKey === lastViewKey) return;
+      lastViewKey = viewKey;
+      revision += 1;
       clearTimers();
       if (view.phase === 'blocked') {
         if (!Number.isFinite(view.endsAt) || (view.endsAt as number) <= Date.now()) {
@@ -254,6 +287,7 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
     destroy(): void {
       if (destroyed) return;
       destroyed = true;
+      revision += 1;
       clearTimers();
       if (phase === 'blocked') restorePage();
       root.removeEventListener('keydown', keydownHandler);

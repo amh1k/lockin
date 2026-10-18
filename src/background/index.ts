@@ -5,9 +5,12 @@ import { createStore } from '../session/store.ts';
 interface ChromeApi {
   storage: Parameters<typeof createStore>[0];
   runtime: {
+    id: string;
+    sendMessage(message: unknown): Promise<unknown>;
     onMessage: { addListener(listener: (message: unknown, sender: unknown, sendResponse: (reply: unknown) => void) => boolean | void): void };
   };
   webNavigation: {
+    getFrame(details: { tabId: number; frameId: number }): Promise<{ documentId?: string; url?: string } | null>;
     onCommitted: { addListener(listener: (details: NavigationDetails) => void): void };
     onHistoryStateUpdated: { addListener(listener: (details: NavigationDetails) => void): void };
     onReferenceFragmentUpdated: { addListener(listener: (details: NavigationDetails) => void): void };
@@ -47,9 +50,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-const onNavigation = (details: NavigationDetails): void => { void controller.handleNavigation(details); };
+const onNavigation = (details: NavigationDetails): void => { void controller.handleNavigation(details).catch(() => undefined); };
 chrome.webNavigation.onCommitted.addListener(onNavigation);
 chrome.webNavigation.onHistoryStateUpdated.addListener(onNavigation);
 chrome.webNavigation.onReferenceFragmentUpdated.addListener(onNavigation);
-chrome.tabs.onRemoved.addListener((tabId) => { void controller.handleTabRemoved(tabId); });
-chrome.alarms.onAlarm.addListener((alarm) => { void controller.handleAlarm(alarm.name); });
+chrome.tabs.onRemoved.addListener((tabId) => { void controller.handleTabRemoved(tabId).catch(() => undefined); });
+chrome.alarms.onAlarm.addListener((alarm) => { void controller.handleAlarm(alarm.name).catch(() => undefined); });

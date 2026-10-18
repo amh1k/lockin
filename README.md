@@ -33,7 +33,17 @@ npm run build
 
 In Chrome, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked**, and select this repository's `dist/` directory. If you move or copy the repository and load a different path, Chrome can assign a different extension ID; update `OLLAMA_ORIGINS` with that ID and restart Ollama.
 
-Open the LockIn popup and choose **Check setup**. Start a session only after Gemma reports ready. A session can last 25 or 50 minutes and can protect YouTube, Reddit, or both. Uncertain or unavailable model results keep the page available. An active dialog always offers a page-specific override and an end-session action.
+Open the LockIn popup, expand **First time here? Set up local AI**, and choose **Check local Gemma**. You can copy the installed extension origin directly from this panel. Start a session only after Gemma reports ready. A session can last 25 or 50 minutes and can protect YouTube, Reddit, or both. Uncertain or unavailable model results keep the page available. An active dialog always offers a page-specific override and an end-session action.
+
+After changing the code, run `npm run build`, click **Reload** on the LockIn card in `chrome://extensions`, and refresh any YouTube/Reddit tabs. The rebuilt files in `dist/` are the installable extension; no development server is required.
+
+## Troubleshooting
+
+- **The Linux Ollama installer requires zstd:** on Ubuntu/Debian run `sudo apt-get install zstd`, then rerun the installer.
+- **Missing model:** run `ollama pull gemma3:1b` and use **Check local Gemma** again.
+- **Cannot connect:** keep Ollama running, use the origin shown in the popup for `OLLAMA_ORIGINS`, and restart Ollama after changing it.
+- **Check timed out:** the model may still be loading; give it a moment and retry. The first request can be slower than later checks.
+- **Extension reloaded while a site was open:** refresh that tab to reconnect its content script.
 
 ## Development
 
@@ -44,6 +54,8 @@ npm run build
 ```
 
 `npm run eval -- dev` and `npm run eval -- holdout` call the local model against the synthetic fixtures. Results depend on the installed model and hardware; the repository's `eval/results.md` records whether a live run has been completed. Page snapshots and prompts are sent only to the loopback Ollama endpoint at `http://127.0.0.1:11434` and are not written to extension storage.
+
+The deterministic suite covers the model adapter, session policy, extraction, worker races, content reinjection, popup flow and barrier recovery. Run the real-browser cases in [the manual checklist](docs/testing/manual-checklist.md) before treating the build as browser-verified. Live Gemma accuracy/latency is still pending and is not established by mocked tests.
 
 ## Model and license
 

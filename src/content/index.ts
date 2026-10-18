@@ -1,160 +1,129 @@
-import { extractSnapshot, isSupportedUrl } from './extract.ts';
+import { extractSnapshot, isSupportedUrl, pageKey } from './extract.ts';
 import { mountBarrier } from './overlay.ts';
-import type { Barrier } from './overlay.ts';
-import type { Command, CommandReply, EvaluationReply, SessionState, WorkerMessage } from '../shared/types.ts';
+import { sendCommand } from '../shared/messaging.ts';
+import type { CommandRuntime } from '../shared/messaging.ts';
+import type { SessionState, WorkerMessage } from '../shared/types.ts';
 
-const NAVIGATION_SETTLE_MS = 700;
-const TITLE_RESAMPLE_MS = 1_300;
-
-interface RuntimeLike {
-  sendMessage(message: Command): Promise<CommandReply>;
+interface RuntimeLike extends CommandRuntime {
   onMessage: { addListener(listener: (message: WorkerMessage) => void): void };
 }
 
-interface ChromeLike { runtime: RuntimeLike }
-
-const startedDocuments = new WeakSet<Document>();
-
-function requestId(): string {
-  return crypto.randomUUID();
-}
+const STARTED = Symbol.for('lockin.content.started');
 
 export function startContent(document: Document, runtime: RuntimeLike): void {
-  if (startedDocuments.has(document)) return;
-  startedDocuments.add(document);
+  // Properties in the isolated world survive repeated bundle injection.
+  if (Reflect.get(document, STARTED)) return;
+  Reflect.set(document, STARTED, true);
+  const view = document.defaultView!;
   let state: SessionState = { session: null, overrides: [] };
   let generation = 0;
+  let epoch = 0;
   let currentRequest: string | null = null;
-  let scheduled: ReturnType<typeof setTimeout> | undefined;
-  let titleRetry: ReturnType<typeof setTimeout> | undefined;
-  let lastTitle = document.title;
+  let requestEndsAt = 0;
+  let sampleTimer: ReturnType<typeof setTimeout> | undefined;
+  let titleTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSnapshot = '';
-  let titleResampledGeneration = -1;
-  let barrier: Barrier | undefined;
 
-  const ensureBarrier = (): Barrier => barrier ??= mountBarrier(document, {
+  const barrier = mountBarrier(document, {
     override: async () => {
-      const key = extractSnapshot(document, location.href).pageKey;
-      const result = await runtime.sendMessage({ type: 'OVERRIDE_PAGE', pageKey: key, generation });
+      const result = await sendCommand(runtime, { type: 'OVERRIDE_PAGE', pageKey: pageKey(view.location.href), generation });
       if (!result.ok) throw new Error(result.error);
+      state = result.data.state;
     },
     end: async () => {
-      const result = await runtime.sendMessage({ type: 'END_SESSION' });
+      const result = await sendCommand(runtime, { type: 'END_SESSION' });
       if (!result.ok) throw new Error(result.error);
+      state = result.data.state;
+      invalidate();
     },
   });
 
-  const clearTimers = (): void => {
-    if (scheduled !== undefined) clearTimeout(scheduled);
-    if (titleRetry !== undefined) clearTimeout(titleRetry);
-    scheduled = undefined;
-    titleRetry = undefined;
-  };
+  function invalidate(): number {
+    epoch += 1;
+    currentRequest = null;
+    requestEndsAt = 0;
+    clearTimeout(sampleTimer);
+    clearTimeout(titleTimer);
+    barrier.render({ phase: 'idle' });
+    return epoch;
+  }
 
-  const showDecision = (reply: EvaluationReply): void => {
-    if (reply.correlation.generation !== generation || reply.pageKey !== extractSnapshot(document, location.href).pageKey) return;
-    if (reply.decision.action === 'block') {
-      ensureBarrier().render({ phase: 'blocked', ...(state.session ? { goal: state.session.goal } : {}), reason: reply.decision.reason, endsAt: reply.endsAt });
-    } else if (reply.decision.source === 'uncertain') {
-      ensureBarrier().render({ phase: 'uncertain', reason: reply.decision.reason });
-    } else if (reply.decision.source === 'unavailable') {
-      ensureBarrier().render({ phase: 'unavailable', reason: reply.decision.reason });
-    } else {
-      ensureBarrier().render({ phase: 'idle' });
-    }
-  };
-
-  const sample = async (expectedGeneration: number, checkTitle = false): Promise<void> => {
-    if (expectedGeneration !== generation || !document.visibilityState || document.visibilityState === 'hidden') return;
+  async function sample(expected: number, followup = false): Promise<void> {
     const session = state.session;
-    if (!session || Date.now() >= session.endsAt || !isSupportedUrl(location.href, session.hosts)) {
-      ensureBarrier().render({ phase: 'idle' });
-      return;
-    }
-    let snapshot;
-    try { snapshot = extractSnapshot(document, location.href); } catch {
-      ensureBarrier().render({ phase: 'unavailable' });
-      return;
-    }
+    if (expected !== epoch || document.visibilityState !== 'visible' || !session || Date.now() >= session.endsAt) return;
+    if (!isSupportedUrl(view.location.href, session.hosts) || state.overrides.includes(pageKey(view.location.href))) return;
+    const snapshot = extractSnapshot(document, view.location.href);
     const encoded = JSON.stringify(snapshot);
-    if (encoded === lastSnapshot && !checkTitle) return;
+    if (encoded === lastSnapshot) return;
     lastSnapshot = encoded;
-    lastTitle = snapshot.title;
-    ensureBarrier().render({ phase: 'checking' });
-    const id = requestId();
+    const id = crypto.randomUUID();
     currentRequest = id;
+    requestEndsAt = Date.now() + 12_000;
+    barrier.render({ phase: 'checking' });
+    if (!followup) {
+      titleTimer = setTimeout(() => {
+        if (expected === epoch && document.title.trim() !== snapshot.title) void sample(expected, true);
+      }, 1_300);
+    }
     try {
-      const reply = await runtime.sendMessage({ type: 'EVALUATE', snapshot, generation: expectedGeneration, requestId: id });
-      if (!reply.ok && expectedGeneration === generation && currentRequest === id) {
+      const reply = await sendCommand(runtime, { type: 'EVALUATE', snapshot, generation, requestId: id });
+      if (!reply.ok && expected === epoch && currentRequest === id) {
         currentRequest = null;
-        ensureBarrier().render({ phase: 'unavailable' });
+        barrier.render({ phase: 'unavailable' });
       }
     } catch {
-      if (expectedGeneration === generation && currentRequest === id) {
+      if (expected === epoch && currentRequest === id) {
         currentRequest = null;
-        ensureBarrier().render({ phase: 'unavailable' });
+        barrier.render({ phase: 'unavailable' });
       }
     }
-    if (titleRetry !== undefined) clearTimeout(titleRetry);
-    if (!checkTitle && expectedGeneration === generation && titleResampledGeneration !== generation) {
-      titleRetry = setTimeout(() => {
-        if (document.title.trim() && document.title.trim() !== lastTitle) {
-          titleResampledGeneration = expectedGeneration;
-          void sample(expectedGeneration, true);
-        }
-      }, TITLE_RESAMPLE_MS);
-    }
-  };
+  }
 
-  const schedule = (nextGeneration = generation): void => {
-    clearTimers();
-    currentRequest = null;
-    titleResampledGeneration = -1;
-    ensureBarrier().render({ phase: 'idle' });
-    scheduled = setTimeout(() => { void sample(nextGeneration); }, NAVIGATION_SETTLE_MS);
-  };
+  async function synchronize(): Promise<void> {
+    const expected = invalidate();
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const reply = await sendCommand(runtime, { type: 'GET_STATE' });
+      if (expected !== epoch) return;
+      if (!reply.ok) throw new Error(reply.error);
+      state = reply.data.state;
+      generation = reply.data.generation ?? 0;
+      lastSnapshot = '';
+      if (state.session) sampleTimer = setTimeout(() => { void sample(expected); }, 700);
+    } catch {
+      if (expected === epoch) barrier.render({ phase: 'unavailable' });
+    }
+  }
 
   runtime.onMessage.addListener((message) => {
     if (message.type === 'RESAMPLE') {
-      generation = message.generation;
-      lastSnapshot = '';
-      schedule(generation);
+      void synchronize();
     } else if (message.type === 'SESSION_CHANGED') {
       state = message.state;
-      lastSnapshot = '';
-      if (!state.session) {
-        clearTimers();
-        currentRequest = null;
-        ensureBarrier().render({ phase: 'idle' });
-      } else {
-        schedule();
-      }
+      if (!state.session) invalidate();
+      else void synchronize();
     } else if (message.type === 'EVALUATION_RESULT') {
-      if (message.reply.correlation.requestId !== currentRequest) return;
+      const reply = message.reply;
+      const session = state.session;
+      if (!session || session.id !== reply.correlation.sessionId || Date.now() >= session.endsAt ||
+          document.visibilityState !== 'visible' || Date.now() >= requestEndsAt || reply.correlation.requestId !== currentRequest ||
+          reply.correlation.generation !== generation || reply.pageKey !== pageKey(view.location.href)) return;
       currentRequest = null;
-      showDecision(message.reply);
+      const decision = reply.decision;
+      if (state.overrides.includes(reply.pageKey)) barrier.render({ phase: 'idle' });
+      else if (decision.action === 'block') barrier.render({ phase: 'blocked', goal: session.goal, reason: decision.reason, endsAt: session.endsAt });
+      else if (decision.source === 'uncertain' || decision.source === 'unavailable') barrier.render({ phase: decision.source, reason: decision.reason });
+      else barrier.render({ phase: 'idle' });
     }
   });
 
-  const stateChanged = (): void => {
-    if (document.visibilityState === 'visible') {
-      lastSnapshot = '';
-      schedule();
-    }
-  };
-  document.addEventListener('visibilitychange', stateChanged);
-  window.addEventListener('pageshow', stateChanged);
-  window.addEventListener('popstate', stateChanged);
-  window.addEventListener('hashchange', stateChanged);
-
-  void runtime.sendMessage({ type: 'GET_STATE' }).then((reply) => {
-    if (!reply.ok) { ensureBarrier().render({ phase: 'unavailable' }); return; }
-    const data = reply.data as Extract<CommandReply<'GET_STATE'>, { ok: true }>['data'];
-    state = data.state;
-    generation = data.generation ?? 0;
-    if (state.session) schedule();
-  }).catch(() => ensureBarrier().render({ phase: 'unavailable' }));
+  document.addEventListener('visibilitychange', () => { void synchronize(); });
+  view.addEventListener('pageshow', () => { void synchronize(); });
+  view.addEventListener('popstate', () => { void synchronize(); });
+  view.addEventListener('hashchange', () => { void synchronize(); });
+  view.addEventListener('pagehide', invalidate);
+  void synchronize();
 }
 
-declare const chrome: ChromeLike;
+declare const chrome: { runtime: RuntimeLike };
 if (typeof chrome !== 'undefined' && typeof document !== 'undefined') startContent(document, chrome.runtime);

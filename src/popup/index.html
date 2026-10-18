@@ -3,49 +3,62 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>LockIn</title>
+    <title>LockIn — Focus with context</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main class="app">
       <header class="brand-row">
-        <div class="brand-mark" aria-hidden="true">L</div>
-        <div><p class="eyebrow">FOCUS, WITH CONTEXT</p><h1>LockIn</h1></div>
-        <span class="local-pill"><span></span> LOCAL AI</span>
+        <img class="brand-mark" src="icons/icon48.png" width="36" height="36" alt="" />
+        <span class="wordmark">LockIn<span class="wordmark-dot">.</span></span>
+        <span id="model-status" class="model-status" role="status"><i aria-hidden="true"></i><span>Not checked</span></span>
       </header>
-
-      <p id="site-status" class="site-status" role="status"></p>
       <div id="notice" class="notice" role="status" aria-live="polite"></div>
 
-      <section id="session-view" class="session-view" hidden>
-        <p class="eyebrow">SESSION IN PROGRESS</p>
-        <h2 id="session-goal"></h2>
-        <div class="countdown-row"><span>Time remaining</span><strong id="countdown">--:--</strong></div>
-        <p id="session-sites" class="muted"></p>
-        <button id="end-session" class="button button-secondary" type="button">End focus session</button>
-      </section>
-
       <form id="start-form" novalidate>
+        <div class="intro"><h1>Make room for focus.</h1></div>
         <label class="field-label" for="goal">What are you working on?</label>
-        <textarea id="goal" name="goal" minlength="10" maxlength="300" rows="3" placeholder="e.g. Implement Stripe subscriptions in my web app" required></textarea>
-        <div class="field-hint"><span>Be specific so Gemma can judge useful pages.</span><span id="goal-count">0 / 300</span></div>
-
-        <fieldset>
-          <legend>Protect these sites</legend>
-          <label class="check-row"><input type="checkbox" name="host" value="www.youtube.com" checked /><span>YouTube</span></label>
-          <label class="check-row"><input type="checkbox" name="host" value="www.reddit.com" checked /><span>Reddit</span></label>
+        <textarea id="goal" name="goal" minlength="10" maxlength="300" rows="2" placeholder="e.g. Learn how to add Stripe subscriptions to my app" aria-describedby="goal-hint" required></textarea>
+        <div id="goal-hint" class="field-hint"><span>A specific goal makes a better guide.</span><span id="goal-count">0 / 300</span></div>
+        <fieldset class="sites">
+          <legend>Where should we keep you focused?</legend>
+          <label class="check-row"><input type="checkbox" name="host" value="www.youtube.com" checked /><span class="site-icon youtube" aria-hidden="true">▶</span><span>YouTube</span></label>
+          <label class="check-row"><input type="checkbox" name="host" value="www.reddit.com" checked /><span class="site-icon reddit" aria-hidden="true">r/</span><span>Reddit</span></label>
         </fieldset>
-
         <fieldset class="duration-options">
-          <legend>Focus duration</legend>
-          <label class="duration-choice"><input type="radio" name="duration" value="25" checked /><span><strong>25</strong><small>minutes</small></span></label>
-          <label class="duration-choice"><input type="radio" name="duration" value="50" /><span><strong>50</strong><small>minutes</small></span></label>
+          <legend>Give yourself a little time</legend>
+          <label class="duration-choice"><input type="radio" name="duration" value="25" checked /><span><strong>25 <small>min</small></strong><em>A focused sprint</em></span></label>
+          <label class="duration-choice"><input type="radio" name="duration" value="50" /><span><strong>50 <small>min</small></strong><em>A deeper dive</em></span></label>
         </fieldset>
-
-        <button id="start-session" class="button button-primary" type="submit">Start focus session <span aria-hidden="true">→</span></button>
+        <button id="start-session" class="button button-primary" type="submit" disabled>Start focus session <span aria-hidden="true">↗</span></button>
+        <p class="session-hint">You can allow a page or end your session anytime.</p>
       </form>
 
-      <footer><span>Gemma runs on your device through Ollama.</span><button id="check-model" class="text-button" type="button">Check setup</button></footer>
+      <section id="session-view" class="session-view" hidden aria-labelledby="active-heading">
+        <p id="active-heading" class="eyebrow">ONE THING AT A TIME</p>
+        <p id="session-goal" class="session-goal"></p>
+        <div class="clock"><strong id="countdown" role="timer" aria-label="Time remaining">25:00</strong><span>TIME TO MAKE IT HAPPEN</span></div>
+        <progress id="session-progress" max="100" value="0" aria-label="Session progress"></progress>
+        <p id="session-sites" class="muted"></p>
+        <button id="end-session" class="button button-secondary" type="button">End focus session</button>
+        <p class="session-hint">A useful page gets through. A distraction can wait.</p>
+      </section>
+
+      <div class="tab-row"><span class="tab-indicator" aria-hidden="true"></span><p id="site-status">Checking the current tab…</p></div>
+      <details id="setup" class="setup">
+        <summary>First time here? Set up local AI <span aria-hidden="true">+</span></summary>
+        <div class="setup-content">
+          <p>Install Ollama, then download the model once:</p>
+          <code>ollama pull gemma3:1b</code>
+          <p>Allow this extension origin in Ollama’s <code>OLLAMA_ORIGINS</code> setting, then restart Ollama:</p>
+          <code id="extension-origin" class="origin"></code>
+          <button id="copy-origin" type="button" class="text-button">Copy extension origin</button>
+          <p><a href="https://docs.ollama.com/faq#how-do-i-configure-ollama-server" target="_blank" rel="noopener noreferrer">Setup instructions for your OS ↗</a></p>
+          <button id="check-model" class="button button-secondary" type="button">Check local Gemma</button>
+          <p id="setup-feedback" class="muted" role="status" aria-live="polite"></p>
+        </div>
+      </details>
+      <footer><span class="privacy-dot" aria-hidden="true"></span>Local Gemma. Your page context stays on this device.</footer>
     </main>
     <script src="popup.js"></script>
   </body>

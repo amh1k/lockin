@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "LockIn — Focus with context",
+  "name": "LockIn \u2014 Focus with context",
   "version": "0.1.0",
   "description": "Use local Gemma to distinguish useful research from distractions.",
   "minimum_chrome_version": "106",
-  "permissions": ["storage", "alarms", "scripting", "webNavigation"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting",
+    "webNavigation"
+  ],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://www.reddit.com/*",
@@ -16,14 +21,30 @@
   },
   "action": {
     "default_title": "LockIn focus session",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*", "https://www.reddit.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://www.reddit.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }

@@ -20,7 +20,7 @@ This checklist is for a real desktop Chrome session with Ollama available. Unit 
 
 - [ ] `npm ci`, `npm test`, `npm run typecheck`, and `npm run build` pass from a clean checkout.
 - [ ] Load `dist/` using **Load unpacked**; record the extension ID and allow only that origin through `OLLAMA_ORIGINS`.
-- [ ] Restart Ollama, open the popup, and confirm **Check setup** reports Gemma ready.
+- [ ] Restart Ollama, open the popup, and confirm **Check local Gemma** reports Gemma ready.
 - [ ] Stop Ollama and confirm readiness fails with setup guidance and does not start a session.
 - [ ] Inspect the built bundle and browser network panel: the only runtime inference request is to `http://127.0.0.1:11434`; no page text is written to extension storage or sent to a remote telemetry endpoint.
 
@@ -50,9 +50,20 @@ This checklist is for a real desktop Chrome session with Ollama available. Unit 
 | Sparse page, uncertain result, or unsupported site | No barrier; status explains uncertainty/unavailability where applicable. | Pending |
 | Keyboard-only blocked dialog | Focus enters the dialog, Tab stays inside, actions work, and focus returns to the page after release. | Pending |
 | Page is playing top-document media when blocked | Video/audio is paused best-effort; cross-origin media remains an acknowledged limitation. | Pending |
-| Hostile page text resembles HTML or instructions | It is treated as data; no markup/script is created and only validated model labels affect policy. | Plain-text rendering covered in source review; browser smoke pending |
+| Hostile page text resembles HTML or instructions | It is treated as data; no markup/script is created and only validated model labels affect policy. | Plain-text rendering covered by DOM regression tests; browser smoke pending |
 | Iframe, unsupported host, or browser restart | No unsupported-page inference; browser restart leaves focus off because `storage.session` is cleared. | Pending |
 
 ## Current status
 
-The repository's deterministic checks currently pass: `npm test` (61 tests), `npm run typecheck`, and `npm run build`. This environment has no Chrome binary and cannot reach local Ollama, so every browser and live-model row above remains unverified. Keep those statuses pending until the checks are run on the demo machine. The held-out quality and latency gate is documented in [`eval/results.md`](../../eval/results.md).
+The repository's deterministic checks currently pass: `npm test` (90 tests), `npm run typecheck`, and `npm run build`. A cached Chrome binary is present, but launching it fails with `setsockopt: Operation not permitted`; the sandbox also blocks local Ollama access, so every browser and live-model row above remains unverified. Keep those statuses pending until the checks are run on the demo machine. The held-out quality and latency gate is documented in [`eval/results.md`](../../eval/results.md).
+
+
+## MVP polish verification — October 18, 2026
+
+- Popup DOM: valid start/end, input/site validation, duplicate-submit prevention, actionable missing-model help, bounded setup checks, session broadcasts, countdown and progress.
+- Barrier DOM: hostile text stays plain text, repeated rendering preserves focus, Tab trapping and focus restoration, local expiry, 12-second deadline, retry after override failure, local release after end failure, and ignored obsolete action completions.
+- Content: reinjecting the bundle does not duplicate listeners; old-session results cannot reblock a page; visibility changes refresh state.
+- Worker: atomic model-slot ownership, readiness contention, stale document/generation rejection, exact-page overrides, worker restart, delayed alarm ordering, and generation cleanup.
+- Extraction: bounded fields/traversal, hidden/editable/form/UI exclusions, local URL identity and lookalike-host rejection.
+
+These DOM checks use jsdom and mocked Chrome/model APIs. They establish deterministic behavior; visual rendering, actual site navigation and real Gemma quality still require the browser rows above.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Live model evaluation is pending. No inference measurements or quality claims have been recorded yet. This agent's workspace has no Ollama binary, and its sandbox blocks loopback sockets. `npm run eval -- holdout` therefore exits with `Cannot reach local Ollama on 127.0.0.1:11434.` This is an environment limit, not a model result.
+Live model evaluation is pending. No inference measurements or quality claims have been recorded yet. The Ollama CLI is now installed, but this agent's sandbox still blocks loopback sockets. `npm run eval -- holdout` therefore exits with `Cannot reach local Ollama on 127.0.0.1:11434.` This is an environment limit, not a model result.
 
 Run the following from the repository root in a terminal that can access local Ollama. Use Node 24 or newer. Ollama's [model listing API](https://docs.ollama.com/api/tags) supplies the digest and quantization recorded by the evaluator. The Node runner does not need `OLLAMA_ORIGINS`; that setting is needed later for the Chrome extension origin.
 

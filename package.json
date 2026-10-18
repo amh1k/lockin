@@ -3,19 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "eval": "node scripts/evaluate.ts",
     "build": "node scripts/build.mjs"
   },
-  "overrides": { "postcss": "8.5.29" },
+  "overrides": {
+    "postcss": "8.5.29"
+  },
   "devDependencies": {
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
     "typescript": "5.9.3",
     "vite": "7.3.7",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "jsdom": "24.1.3"
   }
 }

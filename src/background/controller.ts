@@ -6,8 +6,6 @@ import type { AIResult, Command, CommandReply, Correlation, EvaluationReply, Ses
 
 const GENERATIONS_KEY = 'lockin.generations';
 const MAX_MESSAGE_BYTES = 16_000;
-const NAVIGATION_SETTLE_MS = 700;
-const TITLE_RESAMPLE_MS = 1_300;
 
 interface Sender {
   tab?: { id?: number; url?: string };
@@ -31,6 +29,8 @@ interface GenerationEntry {
 }
 
 interface ChromeLike {
+  runtime?: { id: string; sendMessage(message: unknown): Promise<unknown> };
+  webNavigation?: { getFrame(details: { tabId: number; frameId: number }): Promise<{ documentId?: string; url?: string } | null> };
   storage: {
     session: {
       get(key: string): Promise<Record<string, unknown>>;
@@ -91,7 +91,7 @@ function supportedHost(url: string): SupportedHost | null {
 }
 
 function extensionSender(sender: Sender): boolean {
-  return typeof sender.url === 'string' && sender.url.startsWith('chrome-extension://');
+  return sender.tab === undefined && typeof sender.url === 'string' && sender.url.startsWith('chrome-extension://');
 }
 
 export function createController(deps: ControllerDependencies): Controller {
@@ -100,21 +100,25 @@ export function createController(deps: ControllerDependencies): Controller {
   let mutationQueue: Promise<void> = Promise.resolve();
   let inferenceActive = false;
   const aborts = new Map<string, AbortController>();
-  const navTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  let generationQueue: Promise<unknown> = Promise.resolve();
+  function generationsMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const next = generationQueue.then(operation, operation);
+    generationQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  async function checkModel() {
+    if (inferenceActive) return { ready: false, error: 'busy' };
+    inferenceActive = true;
+    try { return await ready(); } finally { inferenceActive = false; }
+  }
 
   async function readGenerations(): Promise<Record<string, GenerationEntry>> {
     const value = (await deps.chrome.storage.session.get(GENERATIONS_KEY))[GENERATIONS_KEY];
-    return isRecord(value) ? value as Record<string, GenerationEntry> : {};
-  }
-
-  async function getOrCreateGeneration(tabId: number, url: string, documentId: string): Promise<number> {
-    const generations = await readGenerations();
-    const previous = generations[String(tabId)];
-    if (previous?.url === url && previous.documentId === documentId) return previous.generation;
-    const generation = (previous?.generation ?? 0) + 1;
-    generations[String(tabId)] = { generation, url, documentId };
-    await deps.chrome.storage.session.set({ [GENERATIONS_KEY]: generations });
-    return generation;
+    if (!isRecord(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([, entry]) => isRecord(entry) &&
+      Number.isSafeInteger(entry.generation) && (entry.generation as number) > 0 &&
+      typeof entry.url === 'string' && typeof entry.documentId === 'string')) as Record<string, GenerationEntry>;
   }
 
   async function mutate(operation: () => Promise<void>): Promise<void> {
@@ -124,19 +128,40 @@ export function createController(deps: ControllerDependencies): Controller {
   }
 
   async function broadcast(state: SessionState): Promise<void> {
-    const tabs = await deps.chrome.tabs.query({ url: ['https://www.youtube.com/*', 'https://www.reddit.com/*'] });
+    const tabs = await deps.chrome.tabs.query({ url: ['https://www.youtube.com/*', 'https://www.reddit.com/*'] }).catch(() => []);
+    if (deps.chrome.runtime) await deps.chrome.runtime.sendMessage({ type: 'SESSION_CHANGED', state }).catch(() => undefined);
     await Promise.all(tabs.flatMap((tab) => tab.id === undefined ? [] : [
       deps.chrome.tabs.sendMessage(tab.id, { type: 'SESSION_CHANGED', state }).catch(() => undefined),
     ]));
   }
 
-  async function senderContext(sender: Sender): Promise<{ tabId: number; url: string; documentId: string; generation: number } | null> {
+  async function senderContext(sender: Sender, register = false, inactive = false): Promise<{ tabId: number; url: string; documentId: string; generation: number } | null> {
     const tabId = sender.tab?.id;
-    const url = sender.url ?? sender.tab?.url;
     const documentId = sender.documentId;
-    if (tabId === undefined || sender.frameId !== 0 || !url || !documentId || !supportedHost(url)) return null;
-    const generation = await getOrCreateGeneration(tabId, url, documentId);
-    return { tabId, url, documentId, generation };
+    if (!Number.isInteger(tabId) || sender.frameId !== 0 || !documentId) return null;
+    let url: string;
+    try {
+      const tab = await deps.chrome.tabs.get(tabId!);
+      if (!tab.url || !supportedHost(tab.url)) return null;
+      url = tab.url;
+      if (deps.chrome.webNavigation) {
+        const frame = await deps.chrome.webNavigation.getFrame({ tabId: tabId!, frameId: 0 });
+        if (!frame || frame.documentId !== documentId) return null;
+      } else if (sender.url !== url) return null;
+    } catch { return null; }
+    if (inactive) return { tabId: tabId!, url, documentId, generation: 0 };
+    return generationsMutation(async () => {
+      if (register && !(await deps.store.read()).session) return { tabId: tabId!, url, documentId, generation: 0 };
+      const generations = await readGenerations();
+      const previous = generations[String(tabId)];
+      if (previous?.url === url && previous.documentId === documentId) return { tabId: tabId!, url, documentId, generation: previous.generation };
+      if (!register) return null;
+      if (previous && previous.documentId !== documentId && !deps.chrome.webNavigation) return null;
+      const generation = (previous?.generation ?? 0) + 1;
+      generations[String(tabId)] = { generation, url, documentId };
+      await deps.chrome.storage.session.set({ [GENERATIONS_KEY]: generations });
+      return { tabId: tabId!, url, documentId, generation };
+    });
   }
 
   async function isCurrent(context: { tabId: number; url: string; documentId: string; generation: number }, sessionId: string): Promise<boolean> {
@@ -171,14 +196,15 @@ export function createController(deps: ControllerDependencies): Controller {
     try {
       if (inferenceActive) {
         await new Promise((resolve) => setTimeout(resolve, 1_000));
-        if (!await isCurrent(context, session.id) || inferenceActive) {
+        if (!await isCurrent(context, session.id)) return;
+        if (inferenceActive) {
           await deliver(context, { correlation, pageKey: message.snapshot.pageKey, decision: decide(session, message.snapshot.pageKey, state.overrides, unavailable, now()), endsAt: session.endsAt });
           return;
         }
       }
-      if (!await isCurrent(context, session.id)) return;
       inferenceActive = true;
       ownsInference = true;
+      if (!await isCurrent(context, session.id) || controller.signal.aborted) return;
       const result = await deps.classify(session.goal, message.snapshot, controller.signal);
       if (!await isCurrent(context, session.id)) return;
       const latest = await deps.store.read();
@@ -197,31 +223,32 @@ export function createController(deps: ControllerDependencies): Controller {
 
   async function handleMessage(message: Command, sender: Sender): Promise<CommandReply> {
     if (!isRecord(message) || JSON.stringify(message).length > MAX_MESSAGE_BYTES) return asReply(false, 'Invalid or oversized message.');
-    const fromExtension = extensionSender(sender);
+    const fromExtension = extensionSender(sender) && (!deps.chrome.runtime || sender.url?.startsWith(`chrome-extension://${deps.chrome.runtime.id}/`));
     if (message.type === 'GET_STATE') {
       const state = expire(await deps.store.read(), now());
       let generation: number | null = null;
-      const context = await senderContext(sender);
-      if (context) generation = context.generation;
+      const context = await senderContext(sender, true, state.session === null);
+      if (!context && !fromExtension) return asReply(false, 'This page cannot access LockIn state.');
+      if (context && state.session) generation = context.generation;
       return asReply(true, { state, generation });
     }
     if (message.type === 'CHECK_READY') {
       if (!fromExtension) return asReply(false, 'This command is only available in LockIn.');
-      return asReply(true, await ready());
+      return asReply(true, await checkModel());
     }
     if (message.type === 'START_SESSION') {
       if (!fromExtension) return asReply(false, 'This command is only available in LockIn.');
       let result: CommandReply;
       await mutate(async () => {
         if ((await deps.store.read()).session) { result = asReply(false, 'End the active session before starting another.'); return; }
-        const readiness = await ready();
+        const readiness = await checkModel();
         if (!readiness.ready) { result = asReply(false, `Local Gemma is not ready (${readiness.error ?? 'unavailable'}).`); return; }
         const session = startSession(message.goal, message.durationMinutes, message.hosts, now());
         const state = { session, overrides: [] };
         await deps.store.write(state);
         deps.chrome.alarms.create('lockin.session-expiry', { when: session.endsAt });
         await broadcast(state);
-        const tabs = await deps.chrome.tabs.query({ url: session.hosts.map((host) => `https://${host}/*`) });
+        const tabs = await deps.chrome.tabs.query({ url: session.hosts.map((host) => `https://${host}/*`) }).catch(() => []);
         await Promise.all(tabs.flatMap((tab) => tab.id === undefined ? [] : [
           deps.chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => undefined),
         ]));
@@ -235,6 +262,7 @@ export function createController(deps: ControllerDependencies): Controller {
       await mutate(async () => {
         for (const abort of aborts.values()) abort.abort();
         await deps.store.write(state);
+        await generationsMutation(() => deps.chrome.storage.session.set({ [GENERATIONS_KEY]: {} }));
         await deps.chrome.alarms.clear('lockin.session-expiry');
         await broadcast(state);
       });
@@ -256,6 +284,7 @@ export function createController(deps: ControllerDependencies): Controller {
       if (error) return asReply(false, error);
       const abortKeyPrefix = `${context.tabId}:`;
       for (const [key, abort] of aborts) if (key.startsWith(abortKeyPrefix)) abort.abort();
+      await broadcast(state);
       await deliver(context, { correlation: { sessionId: state.session!.id, tabId: context.tabId, documentId: context.documentId, generation: message.generation, requestId: 'override' }, pageKey: message.pageKey, decision: { action: 'allow', source: 'override', reason: 'This page is allowed for the rest of the session.' }, endsAt: state.session!.endsAt });
       return asReply(true, { state });
     }
@@ -271,51 +300,51 @@ export function createController(deps: ControllerDependencies): Controller {
         await deliver(context, { correlation: { sessionId: state.session.id, tabId: context.tabId, documentId: context.documentId, generation: message.generation, requestId: message.requestId }, pageKey: ownKey, decision: { action: 'allow', source: 'override', reason: 'This page is allowed for the rest of the session.' }, endsAt: state.session.endsAt });
         return asReply(true, { status: 'accepted' });
       }
-      void evaluate(context, message, state);
+      await evaluate(context, message, state);
       return asReply(true, { status: 'accepted' });
     }
     return asReply(false, 'Unknown command.');
   }
 
   async function handleNavigation(details: NavigationDetails): Promise<void> {
-    if (details.frameId !== 0 || !supportedHost(details.url)) return;
-    const prior = navTimers.get(details.tabId);
-    if (prior !== undefined) clearTimeout(prior);
+    if (details.frameId !== 0) return;
     for (const [key, abort] of aborts) if (key.startsWith(`${details.tabId}:`)) abort.abort();
-    const generations = await readGenerations();
-    const old = generations[String(details.tabId)];
-    const entry = { generation: (old?.generation ?? 0) + 1, url: details.url, documentId: details.documentId ?? `nav-${details.timeStamp ?? now()}` };
-    generations[String(details.tabId)] = entry;
-    await deps.chrome.storage.session.set({ [GENERATIONS_KEY]: generations });
-    const timer = setTimeout(() => {
-      navTimers.delete(details.tabId);
-      void deps.chrome.tabs.sendMessage(details.tabId, { type: 'RESAMPLE', generation: entry.generation }).catch(() => undefined);
-    }, NAVIGATION_SETTLE_MS);
-    navTimers.set(details.tabId, timer);
+    const entry = await generationsMutation(async () => {
+      if (!(await deps.store.read()).session) return null;
+      const generations = await readGenerations();
+      const old = generations[String(details.tabId)];
+      const entry = { generation: (old?.generation ?? 0) + 1, url: details.url, documentId: details.documentId ?? old?.documentId ?? '' };
+      generations[String(details.tabId)] = entry;
+      await deps.chrome.storage.session.set({ [GENERATIONS_KEY]: generations });
+      return entry;
+    });
+    if (entry && supportedHost(details.url)) {
+      await deps.chrome.tabs.sendMessage(details.tabId, { type: 'RESAMPLE', generation: entry.generation }).catch(() => undefined);
+    }
   }
 
   async function handleAlarm(name: string): Promise<void> {
     if (name !== 'lockin.session-expiry') return;
-    let state = expire(await deps.store.read(), now());
-    if (state.session) {
-      deps.chrome.alarms.create(name, { when: state.session.endsAt });
-      return;
-    }
     await mutate(async () => {
+      const state = expire(await deps.store.read(), now());
+      if (state.session) {
+        deps.chrome.alarms.create(name, { when: state.session.endsAt });
+        return;
+      }
       for (const abort of aborts.values()) abort.abort();
       await deps.store.write(state);
+      await generationsMutation(() => deps.chrome.storage.session.set({ [GENERATIONS_KEY]: {} }));
       await broadcast(state);
     });
   }
 
   async function handleTabRemoved(tabId: number): Promise<void> {
-    const timer = navTimers.get(tabId);
-    if (timer !== undefined) clearTimeout(timer);
-    navTimers.delete(tabId);
     for (const [key, abort] of aborts) if (key.startsWith(`${tabId}:`)) abort.abort();
-    const generations = await readGenerations();
-    delete generations[String(tabId)];
-    await deps.chrome.storage.session.set({ [GENERATIONS_KEY]: generations });
+    await generationsMutation(async () => {
+      const generations = await readGenerations();
+      delete generations[String(tabId)];
+      await deps.chrome.storage.session.set({ [GENERATIONS_KEY]: generations });
+    });
   }
 
   return { handleMessage, handleNavigation, handleAlarm, handleTabRemoved };
