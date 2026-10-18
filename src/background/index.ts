@@ -1,11 +1,15 @@
 import { createController } from './controller.ts';
-import { classify, checkReady } from '../ai/classify.ts';
+import { createInferenceClient, INFERENCE_TARGET } from '../ai/extension-client.ts';
+import type { InferenceChrome } from '../ai/extension-client.ts';
 import { createStore } from '../session/store.ts';
 
 interface ChromeApi {
+  offscreen: InferenceChrome['offscreen'];
   storage: Parameters<typeof createStore>[0];
   runtime: {
     id: string;
+    getURL(path: string): string;
+    getContexts(filter: { contextTypes: string[]; documentUrls: string[] }): Promise<unknown[]>;
     sendMessage(message: unknown): Promise<unknown>;
     onMessage: { addListener(listener: (message: unknown, sender: unknown, sendResponse: (reply: unknown) => void) => boolean | void): void };
   };
@@ -42,9 +46,11 @@ interface NavigationDetails {
 declare const chrome: ChromeApi;
 
 const store = createStore(chrome.storage);
+const { classify, checkReady } = createInferenceClient(chrome);
 const controller = createController({ chrome, store, classify, checkReady });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (typeof message === 'object' && message !== null && 'target' in message && message.target === INFERENCE_TARGET) return;
   void controller.handleMessage(message as Parameters<typeof controller.handleMessage>[0], sender as Parameters<typeof controller.handleMessage>[1])
     .then(sendResponse, (error: unknown) => sendResponse({ ok: false, error: error instanceof Error ? error.message : 'LockIn could not handle this request.' }));
   return true;

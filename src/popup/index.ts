@@ -44,7 +44,7 @@ function showNotice(message: string, error = false): void {
 function errorMessage(error: string): string {
   if (error.includes('missing-model')) return 'Gemma is not downloaded yet. Run ollama pull gemma3:1b, then check again.';
   if (error.includes('busy')) return 'Gemma is checking another page. Give it a moment, then try again.';
-  if (error.includes('timeout')) return 'Gemma took too long to respond. Make sure Ollama is running, then try again.';
+  if (error.includes('timeout')) return 'Gemma did not finish within 5 minutes. Check Ollama’s model and hardware, then try again.';
   if (error.includes('network') || error.includes('http')) return 'Could not connect to Ollama. Start it, allow this extension’s origin, then restart Ollama.';
   return error;
 }
@@ -118,7 +118,7 @@ checkButton.addEventListener('click', async () => {
   if (busy) return;
   setBusy(true);
   modelStatus('Checking…');
-  byId('setup-feedback').textContent = 'Running a small test with local Gemma…';
+  byId('setup-feedback').textContent = 'Loading and checking local Gemma… This can take up to 5 minutes.';
   try {
     const result = await send({ type: 'CHECK_READY' });
     const ready = result.ok && result.data.ready;
@@ -137,7 +137,7 @@ form.addEventListener('submit', async (event) => {
   const hosts = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="host"]:checked')).map((input) => input.value as SupportedHost);
   const duration = Number(form.querySelector<HTMLInputElement>('input[name="duration"]:checked')!.value) as 25 | 50;
   setBusy(true);
-  startButton.textContent = 'Checking Gemma…';
+  startButton.textContent = 'Checking Gemma… up to 5 min';
   modelStatus('Checking…');
   try {
     const reply = await send({ type: 'START_SESSION', goal: goal.value.trim(), durationMinutes: duration, hosts });

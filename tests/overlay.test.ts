@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MODEL_MESSAGE_TIMEOUT_MS } from '../src/config.ts';
 import { mountBarrier } from '../src/content/overlay.ts';
 import type { Barrier } from '../src/content/overlay.ts';
 
@@ -51,7 +52,7 @@ describe('recoverable barrier', () => {
 
   it('does not extend the checking deadline on duplicate renders', async () => {
     barrier = mountBarrier(document, { override: async () => {}, end: async () => {} });
-    barrier.render({ phase: 'checking' }); await vi.advanceTimersByTimeAsync(10_000);
+    barrier.render({ phase: 'checking' }); await vi.advanceTimersByTimeAsync(MODEL_MESSAGE_TIMEOUT_MS - 2_000);
     barrier.render({ phase: 'checking' }); await vi.advanceTimersByTimeAsync(2_000);
     expect(shadow().textContent).toContain('could not check'); expect(document.body.style.overflow).toBe('');
   });

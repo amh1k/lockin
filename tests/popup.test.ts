@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MODEL_MESSAGE_TIMEOUT_MS } from '../src/config.ts';
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Command, SessionState, WorkerMessage } from '../src/shared/types.ts';
@@ -76,7 +77,9 @@ describe('popup focus flow', () => {
   it('provides the exact extension origin and a bounded setup check', async () => {
     expect(byId('extension-origin').textContent).toBe('chrome-extension://lockin');
     send.mockImplementationOnce(() => new Promise(() => {})); byId('check-model').click();
-    await vi.advanceTimersByTimeAsync(12_001);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(byId<HTMLButtonElement>('check-model').disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(MODEL_MESSAGE_TIMEOUT_MS - 60_000 + 1);
     expect(byId<HTMLButtonElement>('check-model').disabled).toBe(false);
     expect(byId('setup-feedback').textContent).toContain('Reload');
   });

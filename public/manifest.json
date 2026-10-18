@@ -3,12 +3,13 @@
   "name": "LockIn \u2014 Focus with context",
   "version": "0.1.0",
   "description": "Use local Gemma to distinguish useful research from distractions.",
-  "minimum_chrome_version": "106",
+  "minimum_chrome_version": "116",
   "permissions": [
     "storage",
     "alarms",
     "scripting",
-    "webNavigation"
+    "webNavigation",
+    "offscreen"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",

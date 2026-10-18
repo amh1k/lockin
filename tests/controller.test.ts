@@ -106,7 +106,7 @@ describe('controller lifecycle and message authority', () => {
 
   it('recovers generations after creating a fresh controller', async () => {
     const app = harness(); const gen = await generation(app);
-    const fresh = createController({ chrome: app.chrome, store: app.store, classify: app.classify, clock: () => now });
+    const fresh = createController({ chrome: app.chrome, store: app.store, classify: app.classify, checkReady: app.checkReady, clock: () => now });
     const reply = await fresh.handleMessage({ type: 'GET_STATE' }, sender);
     expect(reply).toMatchObject({ ok: true, data: { generation: gen, state: initialState } });
   });

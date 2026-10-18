@@ -1,5 +1,6 @@
 # LockIn: two-day MVP architecture
 
+> Runtime amendment (October 18): the user increased model requests to five minutes. A local offscreen document now hosts a dedicated inference worker (Chrome 116+); model UI/transport waits include a two-second delivery margin. Earlier 10-second inference, 12-second model UI, and no-offscreen statements below are superseded by [the timeout amendment](2026-10-18-inference-timeout.md). Recovery/state commands retain their 12-second bound.
 Status: proposed design, not implemented. Prepared October 16, 2026. The user authorized planning and delegated product choices; these are recommendations, not validated customer requirements.
 
 ## 1. Intent and requirements

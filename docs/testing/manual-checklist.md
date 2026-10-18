@@ -46,7 +46,7 @@ This checklist is for a real desktop Chrome session with Ollama available. Unit 
 
 | Case | Expected behavior | Result / evidence |
 |---|---|---|
-| Ollama is stopped during a session or returns malformed output | Page remains usable and shows unavailable status within the 12-second UI deadline. | Pending |
+| Ollama is stopped during a session or returns malformed output | Page remains usable and shows unavailable status after the five-minute inference deadline (plus up to two seconds for delivery). | Pending |
 | Sparse page, uncertain result, or unsupported site | No barrier; status explains uncertainty/unavailability where applicable. | Pending |
 | Keyboard-only blocked dialog | Focus enters the dialog, Tab stays inside, actions work, and focus returns to the page after release. | Pending |
 | Page is playing top-document media when blocked | Video/audio is paused best-effort; cross-origin media remains an acknowledged limitation. | Pending |
@@ -55,15 +55,18 @@ This checklist is for a real desktop Chrome session with Ollama available. Unit 
 
 ## Current status
 
-The repository's deterministic checks currently pass: `npm test` (90 tests), `npm run typecheck`, and `npm run build`. A cached Chrome binary is present, but launching it fails with `setsockopt: Operation not permitted`; the sandbox also blocks local Ollama access, so every browser and live-model row above remains unverified. Keep those statuses pending until the checks are run on the demo machine. The held-out quality and latency gate is documented in [`eval/results.md`](../../eval/results.md).
+The repository's deterministic checks currently pass: `npm test` (98 tests), `npm run typecheck`, and `npm run build`. A cached Chrome binary is present, but launching it fails with `setsockopt: Operation not permitted`; the sandbox also blocks local Ollama access, so every browser and live-model row above remains unverified. Keep those statuses pending until the checks are run on the demo machine. The held-out quality and latency gate is documented in [`eval/results.md`](../../eval/results.md).
 
 
 ## MVP polish verification — October 18, 2026
 
 - Popup DOM: valid start/end, input/site validation, duplicate-submit prevention, actionable missing-model help, bounded setup checks, session broadcasts, countdown and progress.
-- Barrier DOM: hostile text stays plain text, repeated rendering preserves focus, Tab trapping and focus restoration, local expiry, 12-second deadline, retry after override failure, local release after end failure, and ignored obsolete action completions.
+- Barrier DOM: hostile text stays plain text, repeated rendering preserves focus, Tab trapping and focus restoration, local expiry, five-minute model deadline, retry after override failure, local release after end failure, and ignored obsolete action completions.
 - Content: reinjecting the bundle does not duplicate listeners; old-session results cannot reblock a page; visibility changes refresh state.
 - Worker: atomic model-slot ownership, readiness contention, stale document/generation rejection, exact-page overrides, worker restart, delayed alarm ordering, and generation cleanup.
 - Extraction: bounded fields/traversal, hidden/editable/form/UI exclusions, local URL identity and lookalike-host rejection.
 
 These DOM checks use jsdom and mocked Chrome/model APIs. They establish deterministic behavior; visual rendering, actual site navigation and real Gemma quality still require the browser rows above.
+
+
+Five-minute timeout update: inference now runs in an offscreen-hosted dedicated worker. Verify a real request lasting more than 30 seconds on Chrome 116+, then verify navigation/end/expiry still cancel or ignore the result. This real-Chrome case remains pending; mocked tests cover model and transport deadlines.

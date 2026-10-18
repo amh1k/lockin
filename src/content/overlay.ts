@@ -1,3 +1,4 @@
+import { MODEL_MESSAGE_TIMEOUT_MS, COMMAND_TIMEOUT_MS } from '../config.ts';
 export type BarrierPhase = 'idle' | 'checking' | 'blocked' | 'uncertain' | 'unavailable';
 
 export interface BarrierView {
@@ -17,8 +18,8 @@ export interface Barrier {
   destroy(): void;
 }
 
-const CHECKING_TIMEOUT_MS = 12_000;
-const ACTION_TIMEOUT_MS = 12_000;
+const CHECKING_TIMEOUT_MS = MODEL_MESSAGE_TIMEOUT_MS;
+const ACTION_TIMEOUT_MS = COMMAND_TIMEOUT_MS;
 const instances = new WeakMap<Document, Barrier>();
 
 const styles = `
@@ -274,7 +275,7 @@ export function mountBarrier(document: Document, actions: BarrierActions): Barri
       if (phase === 'blocked') restorePage();
       phase = view.phase;
       if (view.phase === 'checking') {
-        renderStatus('Checking whether this page fits your focus goal…');
+        renderStatus('Checking relevance with local Gemma. This can take up to 5 minutes; the page stays available.');
         checkTimer = setTimeout(() => release('unavailable'), CHECKING_TIMEOUT_MS);
       } else if (view.phase === 'uncertain') {
         renderStatus('LockIn is unsure about this page. It remains available.');

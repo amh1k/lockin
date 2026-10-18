@@ -51,7 +51,7 @@ describe('local Gemma classifier', () => {
     expect(await classifierWith(content).classify(goal, snapshot)).toEqual({ status: 'unavailable', error: 'invalid', durationMs: 0 });
   });
 
-  it('timeout_aborts_at_10000ms', async () => {
+  it('timeout_aborts_at_five_minutes', async () => {
     vi.useFakeTimers();
     let requestSignal: AbortSignal | undefined;
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (_url, init) => {
@@ -64,7 +64,7 @@ describe('local Gemma classifier', () => {
     expect(requestSignal?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(requestSignal?.aborted).toBe(true);
-    expect(await pending).toMatchObject({ status: 'unavailable', error: 'timeout', durationMs: 10_000 });
+    expect(await pending).toMatchObject({ status: 'unavailable', error: 'timeout', durationMs: INFERENCE_TIMEOUT_MS });
   });
 
   it('external_abort_releases_an_uncooperative_request', async () => {
@@ -190,7 +190,7 @@ describe('readiness', () => {
       return new Promise<Response>(() => {});
     });
     const pending = createClassifier({ fetch }).checkReady();
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(INFERENCE_TIMEOUT_MS);
     expect(await pending).toEqual({ ready: false, error: 'timeout' });
     expect(fetch).toHaveBeenCalledTimes(2);
   });

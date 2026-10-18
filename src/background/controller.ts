@@ -1,5 +1,4 @@
 import { SUPPORTED_HOSTS } from '../config.ts';
-import { checkReady as defaultCheckReady } from '../ai/classify.ts';
 import { addOverride, decide, expire, normalizePageKey, startSession } from '../session/state.ts';
 import type { LockInStore } from '../session/store.ts';
 import type { AIResult, Command, CommandReply, Correlation, EvaluationReply, SessionState, Snapshot, SupportedHost } from '../shared/types.ts';
@@ -53,7 +52,7 @@ export interface ControllerDependencies {
   store: LockInStore;
   classify: Classifier;
   clock?: () => number;
-  checkReady?: () => Promise<{ ready: boolean; error?: string }>;
+  checkReady: () => Promise<{ ready: boolean; error?: string }>;
 }
 
 export interface Controller {
@@ -96,7 +95,7 @@ function extensionSender(sender: Sender): boolean {
 
 export function createController(deps: ControllerDependencies): Controller {
   const now = deps.clock ?? Date.now;
-  const ready = deps.checkReady ?? defaultCheckReady;
+  const ready = deps.checkReady;
   let mutationQueue: Promise<void> = Promise.resolve();
   let inferenceActive = false;
   const aborts = new Map<string, AbortController>();

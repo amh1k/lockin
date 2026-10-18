@@ -1,3 +1,4 @@
+import { MODEL_MESSAGE_TIMEOUT_MS } from '../config.ts';
 import { extractSnapshot, isSupportedUrl, pageKey } from './extract.ts';
 import { mountBarrier } from './overlay.ts';
 import { sendCommand } from '../shared/messaging.ts';
@@ -58,7 +59,7 @@ export function startContent(document: Document, runtime: RuntimeLike): void {
     lastSnapshot = encoded;
     const id = crypto.randomUUID();
     currentRequest = id;
-    requestEndsAt = Date.now() + 12_000;
+    requestEndsAt = Date.now() + MODEL_MESSAGE_TIMEOUT_MS;
     barrier.render({ phase: 'checking' });
     if (!followup) {
       titleTimer = setTimeout(() => {

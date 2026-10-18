@@ -1,5 +1,6 @@
 # LockIn Implementation Plan
 
+> Runtime amendment (October 18): the user increased model requests to five minutes. A local offscreen document now hosts a dedicated inference worker (Chrome 116+); model UI/transport waits include a two-second delivery margin. Earlier 10-second inference, 12-second model UI, and no-offscreen statements below are superseded by [the timeout amendment](2026-10-18-inference-timeout.md). Recovery/state commands retain their 12-second bound.
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a usable context-aware MV3 focus extension with Gemma central to its decisions and evidence for appropriate Hacktoberfest partner categories within two days.
