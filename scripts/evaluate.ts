@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
+import { cpus, platform, release, totalmem } from "node:os";
 import { fileURLToPath } from "node:url";
-import { checkReady, classify } from "../src/ai/classify.ts";
-import { MODEL, PROMPT_VERSION } from "../src/config.ts";
+import { classify } from "../src/ai/classify.ts";
+import { MODEL, OLLAMA_BASE_URL, PROMPT_VERSION } from "../src/config.ts";
 import type { AIResult, Label, Snapshot } from "../src/shared/types.ts";
 
 export interface EvaluationFixture {
@@ -38,20 +39,33 @@ export interface EvalReport {
   distractingBlocked: number;
   distractingRecall: number | null;
   coldDurationMs: number | null;
+  warmCount: number;
   warmP95Ms: number | null;
   metadata: {
     model: string;
+    modelDigest?: string;
+    quantization?: string;
     promptVersion: string;
     evaluatedAt: string;
     runtime: string;
+    platform: string;
+    cpu: string;
+    memoryGiB: number;
   };
   results: FixtureResult[];
 }
 
-/** Run fixtures sequentially so the first inference can be reported separately. */
+export interface EvaluationOptions {
+  coldProbeDurationMs?: number;
+  modelDigest?: string;
+  quantization?: string;
+}
+
+/** Run fixtures sequentially. With a separate cold probe, all fixture calls count as warm. */
 export async function evaluate(
   fixtures: EvaluationFixture[],
   classifier: EvaluationClassifier,
+  options: EvaluationOptions = {},
 ): Promise<EvalReport> {
   const expectedCounts: Record<Label, number> = {
     relevant: 0,
@@ -113,7 +127,8 @@ export async function evaluate(
     (result) => result.expected === "distracting" && result.actual === "distracting",
   ).length;
   const distractions = expectedCounts.distracting;
-  const warmDurations = durations.slice(1).sort((a, b) => a - b);
+  const hasColdProbe = options.coldProbeDurationMs !== undefined;
+  const warmDurations = (hasColdProbe ? durations : durations.slice(1)).sort((a, b) => a - b);
   const warmP95Ms = percentileNearestRank(warmDurations, 0.95);
 
   return {
@@ -126,13 +141,19 @@ export async function evaluate(
     distractingBlocked,
     distractingRecall:
       distractions === 0 ? null : distractingBlocked / distractions,
-    coldDurationMs: durations[0] ?? null,
+    coldDurationMs: options.coldProbeDurationMs ?? durations[0] ?? null,
+    warmCount: warmDurations.length,
     warmP95Ms,
     metadata: {
       model: MODEL,
+      ...(options.modelDigest ? { modelDigest: options.modelDigest } : {}),
+      ...(options.quantization ? { quantization: options.quantization } : {}),
       promptVersion: PROMPT_VERSION,
       evaluatedAt: new Date().toISOString(),
       runtime: `Node ${process.versions.node}`,
+      platform: `${platform()} ${release()}`,
+      cpu: cpus()[0]?.model ?? "unknown",
+      memoryGiB: Math.round((totalmem() / 1024 ** 3) * 10) / 10,
     },
     results,
   };
@@ -149,22 +170,68 @@ async function loadFixtures(name: "dev" | "holdout"): Promise<EvaluationFixture[
   return JSON.parse(await readFile(url, "utf8")) as EvaluationFixture[];
 }
 
+interface InstalledModel {
+  digest: string;
+  quantization: string;
+}
+
+export async function getInstalledModel(request: typeof fetch = fetch): Promise<InstalledModel> {
+  let response: Response;
+  try {
+    response = await request(`${OLLAMA_BASE_URL}/api/tags`, {
+      signal: AbortSignal.timeout(10_000),
+      redirect: "error",
+    });
+  } catch {
+    throw new Error("Cannot reach local Ollama on 127.0.0.1:11434.");
+  }
+  if (!response.ok) throw new Error(`Ollama model lookup failed (HTTP ${response.status}).`);
+  const tags: unknown = await response.json();
+  if (typeof tags !== "object" || tags === null || !("models" in tags) || !Array.isArray(tags.models)) {
+    throw new Error("Ollama returned an invalid model list.");
+  }
+  const model = tags.models.find((entry: unknown) =>
+    typeof entry === "object" && entry !== null &&
+    ("name" in entry && entry.name === MODEL || "model" in entry && entry.model === MODEL),
+  );
+  if (!model) throw new Error(`Required model ${MODEL} is not installed. Run: ollama pull ${MODEL}`);
+  return {
+    digest: typeof model.digest === "string" ? model.digest : "unknown",
+    quantization: typeof model.details?.quantization_level === "string"
+      ? model.details.quantization_level : "unknown",
+  };
+}
+
 async function main(): Promise<void> {
   const requested = process.argv[2] ?? "both";
   if (requested !== "dev" && requested !== "holdout" && requested !== "both") {
     throw new Error("Usage: node scripts/evaluate.ts [dev|holdout|both]");
   }
-  const readiness = await checkReady();
-  if (!readiness.ready) {
-    throw new Error(`Local Gemma is not ready (${readiness.error ?? "unknown"}). Start Ollama and install the configured model before evaluating.`);
+  // Checking tags does not warm the model, unlike the extension's readiness check.
+  const installed = await getInstalledModel();
+  const development = await loadFixtures("dev");
+  const coldFixture = development[0];
+  if (!coldFixture) throw new Error("The development fixture set is empty.");
+  const coldProbe = await classify(coldFixture.goal, coldFixture.snapshot);
+  if (coldProbe.status !== "ok") {
+    throw new Error(`Gemma cold probe failed (${coldProbe.error}). No fixture scores recorded.`);
   }
   const datasets: Array<"dev" | "holdout"> =
     requested === "both" ? ["dev", "holdout"] : [requested];
 
   for (const name of datasets) {
     const fixtures = await loadFixtures(name);
-    const report = await evaluate(fixtures, classify);
-    process.stdout.write(`${JSON.stringify({ dataset: name, ...report }, null, 2)}\n`);
+    const report = await evaluate(fixtures, classify, {
+      coldProbeDurationMs: coldProbe.durationMs,
+      modelDigest: installed.digest,
+      quantization: installed.quantization,
+    });
+    const meetsGate = name === "holdout"
+      ? report.correct >= 16 && report.relevantFalseBlocks <= 1 &&
+        report.distractingBlocked >= 6 && report.warmCount === 20 &&
+        report.warmP95Ms !== null && report.warmP95Ms <= 5_000
+      : null;
+    process.stdout.write(`${JSON.stringify({ dataset: name, meetsGate, ...report }, null, 2)}\n`);
   }
 }
 

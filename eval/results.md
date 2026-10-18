@@ -2,9 +2,24 @@
 
 ## Status
 
-Live model evaluation is pending. No inference measurements or quality claims have been recorded yet. The execution environment checked for this implementation has no Ollama binary, and its sandbox blocks the loopback request needed to verify an Ollama service. Do not treat this as a model failure or a passing result.
+Live model evaluation is pending. No inference measurements or quality claims have been recorded yet. This agent's workspace has no Ollama binary, and its sandbox blocks loopback sockets. `npm run eval -- holdout` therefore exits with `Cannot reach local Ollama on 127.0.0.1:11434.` This is an environment limit, not a model result.
 
-Run `npm run eval -- dev` while tuning the prompt. After freezing the prompt, run `npm run eval -- holdout` once and record that output below. The evaluator reports the first request separately as cold latency; warm p95 uses only subsequent requests. An unavailable or failed inference is counted as incorrect and remains visible in the per-fixture results.
+Run the following from the repository root in a terminal that can access local Ollama. Use Node 24 or newer. Ollama's [model listing API](https://docs.ollama.com/api/tags) supplies the digest and quantization recorded by the evaluator. The Node runner does not need `OLLAMA_ORIGINS`; that setting is needed later for the Chrome extension origin.
+
+```bash
+ollama pull gemma3:1b
+ollama stop gemma3:1b # Ignore "model not loaded" on a first run.
+node scripts/evaluate.ts dev > eval/dev-report.json
+```
+
+Use the six development cases for prompt tuning only. Once the prompt is frozen, unload the model and run the held-out set once:
+
+```bash
+ollama stop gemma3:1b
+node scripts/evaluate.ts holdout > eval/holdout-report.json
+```
+
+The runner first checks that the configured tag is installed, then makes one development-fixture cold probe. The 20 held-out decisions follow while the model is warm; the report includes all 20 labels and timings, `warmCount: 20`, warm p95, CPU/RAM/OS, model digest and quantization. If an inference is unavailable, it counts as incorrect. A report is valid only if `warmCount` is 20, `actualCounts.unavailable` is zero, and the reported model matches the intended Gemma tag. A passing `meetsGate` is specific to this fixture set and machine. These generated JSON reports can be committed as evidence after review; they contain synthetic fixture IDs and outputs, not browsing history.
 
 ## Frozen datasets
 
@@ -24,8 +39,8 @@ Fill this section from actual evaluator output and machine inspection. Keep the 
 | Ollama version | Pending |
 | Model tag, digest, and quantization | Pending |
 | Prompt version | Pending |
-| Cold latency | Pending |
-| Warm request timings (20 requests) | Pending |
+| Cold probe latency | Pending |
+| Warm request timings (20 held-out requests) | Pending |
 | Held-out exact-label accuracy | Pending / 20 |
 | Relevant pages incorrectly labeled distracting | Pending / 8 |
 | Distracting pages labeled distracting | Pending / 8 |
